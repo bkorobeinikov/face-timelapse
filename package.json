@@ -8,9 +8,16 @@
     "start": "start.js"
   },
   "author": "",
-  "license": "ISC",
+  "license": "MIT",
   "dependencies": {
     "face-recognition": "0.6.0",
-    "windows-build-tools": "^2.2.1"
+    "glob": "7.1.2",
+    "windows-build-tools": "2.2.1"
+  },
+  "devDependencies": {
+    "@types/node": "9.4.6",
+    "minimist": "1.2.0",
+    "ts-node": "4.1.0",
+    "tslint": "5.9.1"
   }
 }
