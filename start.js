@@ -16,27 +16,27 @@ var rightEye = shapes[0].getParts()[0];
 var deg = Math.atan( (leftEye.y - rightEye.y) / (leftEye.x - rightEye.x) ) * 180 / Math.PI;
 
 global.console.log(deg);
-// const win = new fr.ImageWindow();
-// win.setImage(img);
+const win = new fr.ImageWindow();
+win.setImage(img);
 
-// win.addOverlay(new fr.Rect(
-//     leftEye.x - 50,
-//     leftEye.y - 50,
-//     leftEye.x + 50,
-//     leftEye.y + 50
-// ));
+win.addOverlay(new fr.Rect(
+    leftEye.x - 50,
+    leftEye.y - 50,
+    leftEye.x + 50,
+    leftEye.y + 50
+));
 
-// win.addOverlay(new fr.Rect(
-//     rightEye.x - 50,
-//     rightEye.y - 50,
-//     rightEye.x + 50,
-//     rightEye.y + 50
-// ));
+win.addOverlay(new fr.Rect(
+    rightEye.x - 50,
+    rightEye.y - 50,
+    rightEye.x + 50,
+    rightEye.y + 50
+));
 
-// faceRects.forEach(rect => win.addOverlay(rect))
-// // win.renderFaceDetections(faceRects)
-// win.renderFaceDetections(shapes);
-// fr.hitEnterToContinue();
+faceRects.forEach(rect => win.addOverlay(rect))
+// win.renderFaceDetections(faceRects)
+win.renderFaceDetections(shapes);
+fr.hitEnterToContinue();
 
 function getRotation(coords) {
     // Get center as average of top left and bottom right
