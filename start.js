@@ -1,6 +1,6 @@
 const fr = require('face-recognition');
 
-const img = fr.loadImage('C:/Users/borysk/Documents/asia_trip/0966.jpg');
+const img = fr.loadImage('C:/Users/borysk/Documents/asia_trip/asia_trip_test/1524.jpg');
 const detector = new fr.FrontalFaceDetector();
 const faceRects = detector.detect(img);
 const predictor = fr.FaceLandmark5Predictor();

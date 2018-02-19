@@ -1,79 +1,64 @@
+import * as fs from 'fs';
+import * as path from 'path';
 import * as glob from 'glob';
 import * as minimist from 'minimist';
-import * as sharp from 'sharp';
-import { loadImage, FrontalFaceDetector, FaceLandmark5Predictor, FullObjectDetection } from 'face-recognition';
+import * as jimp from 'jimp';
+import { maxBy, meanBy } from 'lodash';
+import { getMetadata, getFacialLandmark } from './recognition'
+import { applyRotation, copyFile } from './utils'
 
 const args = minimist(process.argv.slice(2));
-const path = args.path;
-
-glob(path, {}, (err, files: string[]) => {
-    files.forEach(file => {
-        const shape = getFacialLandmark(file);
-
-        if (shape == null) {
-            global.console.warn(`${file} - not face landmark detected`);
-            return;
-        }
-
-        const rotation = getRotationOfFacialLandmark(shape);
-        const distance = getDistanceBetweenEyes(shape);
-
-        var img = sharp(file);
-        const scale = getFaceScale(img, shape);
-        const offset = getFaceOffset(img, shape);
-
-        global.console.log(`rotation: ${rotation}; image: ${file}`);
-    });
-});
-
-function getFacialLandmark(imagePath: string) {
-    const img = loadImage(imagePath);
-    const detector = new FrontalFaceDetector();
-    const faceRects = detector.detect(img);
-
-    if (faceRects.length == 0) {
-        return null;
-    }
-
-    const predictor = FaceLandmark5Predictor();
-    const shapes = faceRects.map(rect => predictor.predict(img, rect));
-
-    if (shapes.length == 0) {
-        return null;
-    }
-
-    return shapes[0];
-}
-
-function getEyes(shape: FullObjectDetection) {
-    const parts = shape.getParts();
-    var leftEye = parts[parts.length - 3];
-    var rightEye = parts[0];
-
-    return {
-        leftEye,
-        rightEye,
-    };
-}
-
-function getRotationOfFacialLandmark(shape: FullObjectDetection) {
-    const { leftEye, rightEye } = getEyes(shape);
-    return Math.atan( (leftEye.y - rightEye.y) / (leftEye.x - rightEye.x) ) * 180 / Math.PI;
-}
-
-function getDistanceBetweenEyes(shape: FullObjectDetection) {
-    const { leftEye, rightEye } = getEyes(shape);
-    return rightEye.x - leftEye.x;
-}
+const sourcePath = args.path;
 
 /**
- * Gets face scale and offset relative to the image center
- * @param shape 
+ * Rotate pictures, so the eyes are aligned horizontally
+ * @param sourceGlob source path
  */
-function getFaceScale(img: sharp.SharpInstance, shape: FullObjectDetection) {
-    const { leftEye, rightEye } = getEyes(shape);
+function stage1(sourceGlob: string) {
+    global.console.log('======== STAGE #1 ========');
+    const outputDirName = './stage1';
 
-    const distance = getDistanceBetweenEyes(shape);
+    return new Promise((resolve, reject) => {
+        glob(sourceGlob, {}, (err, files: string[]) => {
+            // stage 1 - rotate files
+            const stage1tasks = files.map(file => {
+                const dir = path.dirname(file);
+                const outputDir = path.resolve(dir, outputDirName);
+                const outputFile = path.resolve(outputDir, path.basename(file));
+                const outputFailedDir = path.resolve(outputDir, './failed/');
+                const outputFileFailed = path.resolve(outputFailedDir, path.basename(file));
 
-    return distance / img.
+                if (!fs.existsSync(outputDir)) {
+                    fs.mkdirSync(outputDir);
+                }
+
+                if (!fs.existsSync(path.dirname(outputFailedDir))) {
+                    fs.mkdirSync(path.dirname(outputFailedDir));
+                }
+        
+                const shape = getFacialLandmark(file);
+        
+                if (shape == null) {
+                    global.console.warn(`${file} - not face landmark detected; copying original;`);
+                    return copyFile(file, outputFileFailed);
+                }
+        
+                return jimp.read(file)
+                    .then(img => getMetadata(img, shape))
+                    .then(metadata => {
+                        global.console.log(`deg: ${metadata.rotation}; scale: ${metadata.scale}; dist: ${metadata.distance}; img: ${file}`);
+                        return metadata;
+                    })
+                    .then(meta => applyRotation(file, outputFile, meta.rotation))
+                    .catch(() => {
+                        global.console.warn(`${file} - failed to apply rotation; copying original;`);
+                        return copyFile(file, outputFileFailed);
+                    });
+            });
+
+            Promise.all(stage1tasks).then(resolve).catch(reject);
+        })
+    });
 }
+
+stage1(sourcePath);
