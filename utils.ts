@@ -2,6 +2,16 @@ import * as fs from 'fs';
 import * as jimp from 'jimp';
 import * as path from 'path';
 
+function ensureDir(source) {
+    if (path.dirname(source) !== source) {
+        source = path.dirname(source);
+    }
+
+    if (!fs.existsSync(source)) {
+        fs.mkdirSync(source);
+    }
+}
+
 function copyFile(src, dest) {
     return new Promise((resolve, reject) => {
         fs.copyFile(src, dest, (err) => {
@@ -119,4 +129,5 @@ export {
     applyRotation,
     copyFile,
     applyOffset,
+    ensureDir,
 }

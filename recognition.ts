@@ -34,6 +34,10 @@ function getEyes(shape: FullObjectDetection) {
 }
 
 function getMetadata(img: jimp, shape: FullObjectDetection) {
+    if (!shape) {
+        return null;
+    }
+
     const { leftEye, rightEye } = getEyes(shape);
 
     return Promise.resolve(img).then((img) => {

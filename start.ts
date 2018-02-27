@@ -5,7 +5,9 @@ import * as minimist from 'minimist';
 import * as jimp from 'jimp';
 import { maxBy, meanBy } from 'lodash';
 import { getMetadata, getFacialLandmark } from './recognition'
-import { applyRotation, copyFile, applyOffset } from './utils'
+import { applyRotation, copyFile, applyOffset, ensureDir } from './utils'
+
+import { createSystem, Actor } from 'comedy';
 
 const args = minimist(process.argv.slice(2));
 const sourcePath = args.path;
@@ -13,54 +15,131 @@ const sourcePath = args.path;
 const outputDirNameStage1 = './stage1';
 const outputDirNameStage2 = './stage2';
 
+const actorSystem = createSystem({});
+
+interface IPoint {
+    x: number;
+    y: number;
+}
+
+interface ISize {
+    width: number;
+    height: number;
+}
+
+interface IDetectionMetadata {
+    rotation: number;
+    center: IPoint;
+}
+
+interface IImageAnalysis {
+    source: string;
+
+    size: ISize;
+
+    metadata: IDetectionMetadata;
+}
+
+class ImageAnalyzerActor {
+    detect(source: string): Promise<IImageAnalysis> {
+        const shape = getFacialLandmark(source);
+
+        return jimp.read(source)
+            .then(img => Promise.all([getMetadata(img, shape), Promise.resolve(img)]))
+            .then(([metadata, img]) => {
+                return {
+                    source: source,
+                    size: {
+                        width: img.bitmap.width,
+                        height: img.bitmap.height,
+                    },
+                    metadata: metadata ? {
+                        rotation: metadata.rotation,
+                        center: metadata.center,
+                    } : null,
+                };
+            })
+            .then((pic: IImageAnalysis) => {
+                if (!pic.metadata) {
+                    global.console.warn(`file: ${pic.source}; NO METADATA`);
+                } else {
+                    global.console.log(`file: ${pic.source}; deg: ${pic.metadata.rotation}; center: ${pic.metadata.center.x}:${pic.metadata.center.y}`);
+                }
+
+                return pic;
+            });
+    }
+}
+
+class ImageRotationActor {
+    rotate(pic: IImageAnalysis): Promise<string> {
+        const source = pic.source;
+        const dir = path.dirname(pic.source);
+        const dest = path.resolve(dir, './output', path.basename(source));
+        const destFail = path.resolve(dir, './output/failed', path.basename(source));
+
+        if (!pic.metadata) {
+            ensureDir(destFail);
+            return copyFile(source, destFail)
+                .then(() => null);
+        }
+
+        return applyRotation(source, dest, pic.metadata.rotation)
+            .then(() => dest)
+            .catch(() => {
+                global.console.warn(`${source} - failed to apply rotation; copying original;`);
+                return copyFile(source, destFail).then(() => null);
+            });
+    }
+}
+
+function run(files: string[]): Promise<any> {
+    let sourcePictures: IImageAnalysis[] = null;
+    let outputImages: IImageAnalysis[] = null;
+
+    let rootActor: Actor = null;
+    let imgActor: Actor = null;
+
+    return actorSystem.rootActor()
+        .then(root => rootActor = root)
+        .then(root => root.createChild(ImageAnalyzerActor, {
+            mode: 'in-memory',
+            clusterSize: 3,
+        }))
+        .then(actor => imgActor = actor)
+        .then(actor => Promise.all(files.map(f => actor.sendAndReceive('detect', f))))
+        .then((result: IImageAnalysis[]) => {
+            sourcePictures = result;
+        })
+        .then(() => rootActor.createChild(ImageRotationActor, {
+            mode: 'in-memory',
+            clusterSize: 3,
+        }))
+        .then(rotateActor => Promise.all(sourcePictures.map(pic => rotateActor.sendAndReceive('rotate', pic))))
+        .then((outputFiles: string[]) => Promise.all(outputFiles.map(file => imgActor.sendAndReceive('detect', file))))
+        .then((result: IImageAnalysis[]) => {
+            outputImages = result;
+        })
+        .then(() => global.console.log('all done'))
+        .then(() => actorSystem.destroy());
+}
+
 /**
  * Rotate pictures, so the eyes are aligned horizontally
  * @param sourceGlob source path
  */
-function stage1(sourceGlob: string) {
+function stage1(sourceGlob: string): Promise<any> {
     global.console.log('======== STAGE #1 ========');
 
     return new Promise((resolve, reject) => {
         glob(sourceGlob, {}, (err, files: string[]) => {
-            // stage 1 - rotate files
-            const stage1tasks = files.map(file => {
-                const dir = path.dirname(file);
-                const outputDir = path.resolve(dir, outputDirNameStage1);
-                const outputFile = path.resolve(outputDir, path.basename(file));
-                const outputFailedDir = path.resolve(outputDir, './failed/');
-                const outputFileFailed = path.resolve(outputFailedDir, path.basename(file));
-
-                if (!fs.existsSync(outputDir)) {
-                    fs.mkdirSync(outputDir);
-                }
-
-                if (!fs.existsSync(path.dirname(outputFailedDir))) {
-                    fs.mkdirSync(path.dirname(outputFailedDir));
-                }
-
-                const shape = getFacialLandmark(file);
-
-                if (shape == null) {
-                    global.console.warn(`${file} - not face landmark detected; copying original;`);
-                    return copyFile(file, outputFileFailed);
-                }
-
-                return jimp.read(file)
-                    .then(img => getMetadata(img, shape))
-                    .then(metadata => {
-                        global.console.log(`deg: ${metadata.rotation}; scale: ${metadata.scale}; dist: ${metadata.distance}; img: ${file}`);
-                        return metadata;
-                    })
-                    .then(meta => applyRotation(file, outputFile, meta.rotation))
-                    .catch(() => {
-                        global.console.warn(`${file} - failed to apply rotation; copying original;`);
-                        return copyFile(file, outputFileFailed);
-                    });
-            });
-
-            Promise.all(stage1tasks).then(resolve).catch(reject);
-        })
-    });
+            if (err) {
+                reject(err)
+            } else {
+                resolve(files);
+            }
+        });
+    }).then((files: string[]) => run(files));
 }
 
 function stage2(sourceGlob: string) {
@@ -157,4 +236,5 @@ function stage2(sourceGlob: string) {
     });
 }
 
-stage1(sourcePath).then(() => stage2(sourcePath));
+// stage1(sourcePath).then(() => stage2(sourcePath));
+stage1(sourcePath);
