@@ -32,6 +32,55 @@ function applyRotation(file: string, outputFile: string, deg: number) {
     });
 }
 
+function applyOffset(file: string, outputFile: string, scale: number, offset: { x: number, y: number}) {
+    return jimp.read(file).then(img => {
+        // const fileCenter = {
+        //     x: img.bitmap.width / 2,
+        //     y: img.bitmap.height / 2,
+        // };
+
+        const halfWidth = Math.min(offset.x, img.bitmap.width - offset.x);
+        const halfHeight = Math.min(offset.y, img.bitmap.height - offset.y);
+
+        const crop = {
+            x: offset.x - halfWidth,
+            y: offset.y - halfHeight,
+            w: offset.x + halfWidth,
+            h: offset.y + halfHeight,
+        };
+
+        // offset = {
+        //     x: -500, // positive - move to the left
+        //     y: 0, // positive - move to the top
+        // };
+
+        // offset = {
+        //     x: offset.x > 0 ? Math.floor(offset.x / 2 * scale) : offset.x,
+        //     y: offset.y > 0 ? Math.floor(offset.y / 2 * scale) : offset.y,
+        // };
+
+        // const crop = {
+        //     x: Math.max(offset.x, 0),
+        //     y: Math.max(offset.y, 0),
+        //     w: Math.min(img.bitmap.width, img.bitmap.width - Math.abs(offset.x)),
+        //     h: Math.min(img.bitmap.height, img.bitmap.height - Math.abs(offset.y)),
+        // };
+
+        global.console.log(`[applyOffset] scale: ${scale}; offset: ${offset.x}:${offset.y}; crop: ${crop.x}:${crop.y} ${crop.w}:${crop.h}; output: ${outputFile}`)
+        return new Promise((resolve, reject) => {
+            img
+            .scale(scale)
+            .crop(crop.x, crop.y, crop.w, crop.h)
+            .write(outputFile, (err) => {
+                if (err) {
+                    reject(err)
+                } else {
+                    resolve();
+                }
+            });
+        });
+    });
+}
 
 function getCropCoordinates(angleInDeg: number, imageDimensions: {h: number, w: number}) {
     const angleInRadians = angleInDeg * (Math.PI/180);
@@ -69,4 +118,5 @@ function getCropCoordinates(angleInDeg: number, imageDimensions: {h: number, w: 
 export {
     applyRotation,
     copyFile,
+    applyOffset,
 }
